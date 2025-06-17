@@ -1,0 +1,139 @@
+# Mouse Cursor Batch Installer (Mouse-Cursor-Installer)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
+
+[**简体中文**](./README.md) | English
+
+A simple yet powerful batch installation tool for Windows mouse cursor schemes, featuring smart recognition, automatic matching, and one-click installation.
+
+---
+
+## ✨ Features
+
+### 🎯 Smart Cursor Type Recognition
+
+- **Multi-language Keyword Recognition:** Supports cursor filenames in Chinese, English, and Japanese.
+- **Smart Prefix/Suffix Handling:** Automatically identifies and strips common prefixes and suffixes from filenames.
+- **Numeric Sequence Matching:** Supports cursor type inference based on numeric sequences in filenames.
+- **Fallback Matching Mechanism:** Uses file order as a fallback mechanism when keyword matching fails.
+
+### 📦 Batch Installation
+
+- **Universal Method:** No longer requires `.inf` files, making it suitable for various cursor schemes.
+- **Automatic Scheme Naming:** Automatically uses the folder name as the scheme name for quick installation of multiple cursor themes.
+- **Flexible Directory Structure:** Supports recursive scanning of subdirectories.
+
+### 🔄 Automatic Substitution Mechanism
+
+- **Wait ↔ AppStarting Substitution:** Automatically substitutes one for the other when one of them is missing.
+- **Hand/Pin/Person Priority Substitution:** Fills in missing `Hand`, `Pin`, or `Person` cursors based on a priority order.
+
+### 📊 Complete Installation Report
+
+- **Abnormal Count Detection:** Identifies schemes with non-standard cursor counts (e.g., not 5/10/15/17).
+- **Unmatched File Detection:** Discovers cursor files with potential naming issues that could not be matched.
+- **Detailed Statistics Report:** Provides detailed statistics such as the number of successful installations and total files processed.
+
+---
+
+## 🚀 How to Use
+
+1.  **Download:** Go to the [Releases](https://github.com/unc611/Mouse-Cursor-Installer/releases) page and download the latest `Mouse-Cursor-Installer.exe` file.
+
+2.  **Folder Structure:**
+    - Create your cursor folder anywhere. **Each theme should be in its own folder, and the folder name will become the cursor scheme name.** For example:
+      ```
+      MyCursors/
+      ├── Scheme_Name_1/
+      │   ├── cursor1.ani
+      │   ├── cursor2.ani
+      │   └── ...
+      ├── Scheme_Name_2/
+      │   ├── Arrow.cur
+      │   ├── help.cur
+      │   └── ...
+      ├── Normal Select.cur  # Loose cursor files in the root directory are also supported.
+      ├── Help Select.cur
+      └── ...
+      ```
+
+3.  **Run the Tool:**
+    - Double-click `Mouse-Cursor-Installer.exe`. The program will automatically request administrator privileges.
+    - Follow the on-screen menu prompts. The process takes only a few seconds!
+
+4.  **Apply the Scheme:** After installation, the tool will ask if you want to open the Mouse Properties panel immediately. You can find and apply all your newly installed themes from the "Scheme" dropdown menu under the "Pointers" tab.
+
+---
+
+## 🔧 Build Guide
+
+If you want to run from source or modify the code, follow these steps:
+
+1.  **Requirements:** Windows 10/11, PowerShell 5.1 or higher.
+
+2.  **Run the script directly:**
+    - Clone the repository locally.
+    - In PowerShell, execute the following commands (requires administrator privileges):
+      ```powershell
+      Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+      ./mouse-cursor-installer.ps1
+      ```
+
+3.  **Package into an `.exe`:**
+    - This project uses [PS2EXE](https://github.com/MScholtes/PS2EXE) for packaging.
+    - Install the PS2EXE module:
+      ```powershell
+      Install-Module ps2exe
+      ```
+    - Execute the following command to package:
+      ```powershell
+      ps2exe .\mouse-cursor-installer.ps1 .\mouse-cursor-installer.exe
+      ```
+
+---
+
+## 🐛 Troubleshooting
+
+### FAQ
+
+**Q: Automatic privilege elevation fails after double-clicking.**
+```
+A: Try running it manually as an administrator by right-clicking the file.
+```
+
+**Q: Cursor files are not recognized or are recognized incorrectly.**
+```
+A: Check if the filenames are too unconventional or lack descriptive keywords.
+```
+
+**Q: The new scheme cannot be found in the Control Panel after installation.**
+```
+A: Try reopening the "Mouse Properties" window.
+```
+
+**Q: The scheme name is not as expected.**
+```
+A: The tool automatically uses the folder name as the scheme name. Please rename the folder accordingly.
+```
+
+### Debug Mode
+
+Enter `-debug` in the main menu to enable debug mode, which provides a detailed processing log. The log will be saved as `mouse-cursor.log` in the program's directory.
+
+---
+
+## 📄 Authoring
+
+- 59% of the code was generated by Deepseek R1, 30% by Claude Sonnet 4, 10% by Gemini 2.5 Pro, and the remaining 1% was written by me.
+- My role was primarily focused on debugging and resolving logic issues.
+
+---
+
+## 🤝 Contributing
+
+Contributions via Issues and Pull Requests are welcome!
+
+---
+
+⭐ If you find this project helpful, please give it a star!
