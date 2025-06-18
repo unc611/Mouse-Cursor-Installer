@@ -1,5 +1,7 @@
-﻿# 鼠標光標批量安裝工具 v1.0
+﻿# 鼠標光標批量安裝工具 v1.1
 # 需要管理員權限運行
+# 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)
+# 許可證：MIT license
 
 param(
     [string]$SignalFile,
@@ -98,10 +100,10 @@ $script:cursorTypeChinese = @{
             "link", "リンク", "hand", "pointer"
         )
         "Pin" = @(
-            "位置选择", "pin", "場所の選択", "場所"
+            "位置选择", "pin", "場所の選択", "場所", "location"
         )
         "Person" = @(
-            "个人选择", "person", "人の選択", "人“
+            "个人选择", "person", "人の選択", "人"
         )
     }
 
@@ -116,171 +118,196 @@ $script:cursorTypeChinese = @{
     # 按关键词长度降序排序
     $sortedKeywords = $keywordMap.Keys | Sort-Object Length -Descending
 
-# 定義函數：處理一個光標集合（一個主題）
+# 定义函数：处理一个光标集合（一个主题）
 function ProcessCursorSet {
     param([string]$sourceDir)
 
-    Write-Host "`n處理目錄: $sourceDir"
+    Write-Host "`n处理目录: $sourceDir"
 
-    # 獲取目錄名作為主題名
+    # 获取目录名作为主题名
     $themeName = [System.IO.Path]::GetFileName($sourceDir)
 
-    # 清理主題名稱中的特殊字符
+    # 清理主题名称中的特殊字符
     $originalThemeName = $themeName
     $themeName = $themeName -replace '\[|\]|\(|\)|&|%', ''
 
-    Write-DebugLog "原始主題名稱: '$originalThemeName'"
-    Write-DebugLog "清理後主題名稱: '$themeName'"
+    Write-DebugLog "原始主题名称: '$originalThemeName'"
+    Write-DebugLog "清理后主题名称: '$themeName'"
 
-    # 收集光標文件 (.ani 和 .cur)
+    # 收集光标文件 (.ani 和 .cur)
     $cursorFiles = Get-ChildItem -Path $sourceDir -File | Where-Object { $_.Extension -in '.ani', '.cur' } | Sort-Object Name
-    Write-Host "主題名稱: $themeName (找到 $($cursorFiles.Count) 個光標文件)"
+    Write-Host "主题名称: $themeName (找到 $($cursorFiles.Count) 个光标文件)"
 	
     # 添加统计
     $script:processedFiles += $cursorFiles.Count
     $themeInstallSuccess = $true
 
-    # 獲取所有文件名的基本部分（不含擴展名）
+    # 获取所有文件名的基本部分（不含扩展名）
     $baseNames = $cursorFiles | ForEach-Object { 
         [System.IO.Path]::GetFileNameWithoutExtension($_.Name) 
     }
 
-    # 計算公共前綴和後綴
+    # 计算公共前缀和后缀
     $prefixSuffix = Get-CommonPrefixSuffix -strings $baseNames
     $commonPrefix = $prefixSuffix[0]
     $commonSuffix = $prefixSuffix[1]
     
-    Write-DebugLog "公共前綴: '$commonPrefix'"
-    Write-DebugLog "公共後綴: '$commonSuffix'"
+    Write-DebugLog "公共前缀: '$commonPrefix'"
+    Write-DebugLog "公共后缀: '$commonSuffix'"
     Write-Host ""
 
-    # 創建映射表
-    $mapping = @()
-    $typeMapping = @{}
-    $cursorCount = 0
-
+    # 預處理階段：分析所有文件名
+    $strippedNames = @()
     foreach ($file in $cursorFiles) {
-        $cursorCount++
-        $originalName = $file.Name
-        $safeName = "${themeName}_${cursorCount}$($file.Extension)"
+        $baseName = [IO.Path]::GetFileNameWithoutExtension($file.Name)
         
-        # 獲取基本文件名（不含擴展名）
-        $baseName = [IO.Path]::GetFileNameWithoutExtension($originalName)
-
-        # 检查文件名长度是否小于前缀和后缀长度之和
+        # 檢查文件名長度是否小於前綴和後綴長度之和
         $totalPrefixSuffixLength = $commonPrefix.Length + $commonSuffix.Length
-
         if ($baseName.Length -lt $totalPrefixSuffixLength) {
-        $baseName = $commonPrefix + $commonSuffix
-        Write-DebugLog "前后缀可能重复，使用组合名称: $baseName"
+            $baseName = $commonPrefix + $commonSuffix
+            Write-DebugLog "前後綴可能重複，使用組合名稱: $baseName"
         }
 
-        # 移除公共前綴和後綴
+        # 移除公共前綴和后缀
         $strippedName = $baseName
         if (-not [string]::IsNullOrEmpty($commonPrefix)) {
-            # 使用 [regex]::Escape 確保前綴中的特殊字符被正確處理
             $strippedName = $strippedName -replace "^$([regex]::Escape($commonPrefix))", ''
         }
         if (-not [string]::IsNullOrEmpty($commonSuffix)) {
             $strippedName = $strippedName -replace "$([regex]::Escape($commonSuffix))$", ''
         }
         
-        # 如果去除後為空，使用arrow
+        # 如果去除後為空，則明確指定為 "arrow"
         if ([string]::IsNullOrWhiteSpace($strippedName)) {
             $strippedName = "arrow"
         }
 
-        Write-DebugLog "原始文件名: $originalName"
-        Write-DebugLog "處理後文件名: $strippedName"
-
-        # 根據處理後的文件名猜測光標類型
-        $cursorType = DetermineCursorType -fileName $strippedName -fileNumber $cursorCount
-        Write-Debuglog "文件: $originalName -> 類型: $cursorType"
-		
-        $typeMapping[$cursorType] = $originalName
-        $mapping += [PSCustomObject]@{
-            OriginalName = $originalName
-            SafeName = $safeName
-            CursorType = $cursorType
-        }
-
-        # 複製文件到系統光標目錄 - 使用.NET方法
-        $destPath = Join-Path $script:systemCursorDir $safeName
-        try {
-            [System.IO.File]::Copy($file.FullName, $destPath, $true)
-            Write-DebugLog "文件复制成功: $($file.Name) -> $safeName"
-        } catch [System.UnauthorizedAccessException] {
-            Write-Host "    ✗ 权限不足，无法复制文件: $($file.Name)" -ForegroundColor Red
-			$themeInstallSuccess = $false
-            continue
-        } catch [System.IO.IOException] {
-            Write-Host "    ✗ 文件被占用或路径问题: $($file.Name)" -ForegroundColor Red
-			$themeInstallSuccess = $false
-            continue
-        } catch {
-            Write-Host "    ✗ 复制失败: $($file.Name) - $($_.Exception.Message)" -ForegroundColor Red
-			$themeInstallSuccess = $false
-            continue
-        }
+        $strippedNames += $strippedName
     }
 
-    # 检查光标方案数量是否异常
-    $validCounts = @(5, 10, 15, 17)
-    if ($cursorFiles.Count -notin $validCounts) {
-        $script:abnormalCountThemes += [PSCustomObject]@{
-            ThemeName = $originalThemeName
-            FileCount = $cursorFiles.Count
-        }
-        Write-DebugLog "数量异常的方案: $originalThemeName ($($cursorFiles.Count) 个文件)"
-    }
+    # === 核心決策：獲取並執行最終策略 ===
+    $matchingStrategy = AnalyzeMatchingStrategy -strippedNames $strippedNames
     
-    # 检查是否存在未匹配的光标文件
-    $matchedTypes = ($mapping | Select-Object -Property CursorType -Unique).Count
-    if ($matchedTypes -lt $cursorFiles.Count) {
-        $script:unmatchedFilesThemes += [PSCustomObject]@{
-            ThemeName = $originalThemeName
-            TotalFiles = $cursorFiles.Count
-            MatchedTypes = $matchedTypes
-            UnmatchedCount = $cursorFiles.Count - $matchedTypes
-        }
-        Write-DebugLog "存在未匹配文件的方案: $originalThemeName (总文件:$($cursorFiles.Count), 匹配类型:$matchedTypes)"
+    if ($matchingStrategy -eq "Failed") {
+        Write-Host "  ✗ 安裝失敗: $originalThemeName" -ForegroundColor Red
+        Write-Host "    原因: 無法確定命名規則 (既不符合關鍵詞特徵，也不符合數字序號特徵)。" -ForegroundColor Yellow
+        $script:failedThemes += $originalThemeName
+        return # 立即終止此方案的處理
     }
 
-    # 输出标准顺序的匹配结果
-    Write-Host "光標類型匹配結果："
+    Write-Host "光标类型匹配结果："
+    Write-Host "使用策略: $matchingStrategy"
     Write-Host ""
 
+    # === 根據已確定的策略進行匹配與處理 ===
+    $typeMapping = @{}; $alternativeMapping = @{}; $trulyUnmatchedFiles = @()
+    $fileClassification = @{}
+
+    $fileIndex = 0
+    foreach ($file in $cursorFiles) {
+        $fileIndex++
+        $result = DetermineCursorType -fileName $strippedNames[$fileIndex-1] -strategy $matchingStrategy
+        $cursorType = $result.Type
+
+        if ($cursorType) {
+            if ($typeMapping.ContainsKey($cursorType)) {
+                if (-not $alternativeMapping.ContainsKey($cursorType)) { $alternativeMapping[$cursorType] = @() }
+                $alternativeMapping[$cursorType] += $file.Name
+                $fileClassification[$file.Name] = @{ Type = $cursorType; IsAlternative = $true }
+            } else {
+                $typeMapping[$cursorType] = $file.Name
+                $fileClassification[$file.Name] = @{ Type = $cursorType; IsAlternative = $false }
+            }
+        } else {
+            $trulyUnmatchedFiles += $file.Name
+            $fileClassification[$file.Name] = @{ Type = "Unmatched"; IsAlternative = $false }
+        }
+    }
+
+    # === 文件複製與生成最終映射 ===
+    $mapping = @()
+    foreach ($file in $cursorFiles) {
+        $classification = $fileClassification[$file.Name]
+        if ($classification.Type -eq "Unmatched") { continue }
+        
+        $originalName = $file.Name; $cursorType = $classification.Type; $isAlternative = $classification.IsAlternative
+        $typeIndex = $script:schemeOrder.IndexOf($cursorType)
+        $safeNameNumber = if ($typeIndex -ge 0) { $typeIndex + 1 } else { 99 }
+        $safeNameSuffix = ""
+        if ($isAlternative) {
+            $altIndex = if ($alternativeMapping[$cursorType]) { $alternativeMapping[$cursorType].IndexOf($originalName) + 1 } else { 1 }
+            $safeNameSuffix = "_alt$altIndex"
+        }
+        $safeName = "${themeName}_${safeNameNumber}${safeNameSuffix}$($file.Extension)"
+
+        $mapping += [PSCustomObject]@{ OriginalName = $originalName; SafeName = $safeName; CursorType = $cursorType; IsAlternative = $isAlternative }
+        
+        try {
+            [System.IO.File]::Copy($file.FullName, (Join-Path $script:systemCursorDir $safeName), $true)
+        } catch {
+            Write-Host "    ✗ 文件复制失败: $($file.Name) - $($_.Exception.Message)" -ForegroundColor Red
+            $themeInstallSuccess = $false
+        }
+    }
+
+    # === 統計與報告 ===
+    # 檢查匹配到的光标类型数量是否异常
+    if ($typeMapping.Count -notin @(10, 13, 15, 17)) {
+        $script:abnormalCountThemes += [PSCustomObject]@{
+            ThemeName    = $originalThemeName
+            MatchedCount = $typeMapping.Count # 使用匹配到的類型數量
+        }
+    }
+
+    if ($trulyUnmatchedFiles.Count -gt 0) {
+        $script:unmatchedFilesThemes += [PSCustomObject]@{
+            ThemeName      = $originalThemeName
+            TotalFiles     = $cursorFiles.Count
+            MatchedTypes   = $typeMapping.Count
+            UnmatchedCount = $trulyUnmatchedFiles.Count
+        }
+    }
+
+    if ($alternativeMapping.Keys.Count -gt 0) {
+        $script:themesWithAlternatives += [PSCustomObject]@{
+            ThemeName        = $originalThemeName
+            AlternativeCount = ($alternativeMapping.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+            AlternativeTypes = $alternativeMapping.Keys -join ', '
+        }
+    }
+
+    # === 顯示匹配詳情與註冊表寫入 ===
     foreach ($type in $script:schemeOrder) {
         $typeLabel = "$type ($($script:cursorTypeChinese[$type]))"
-        Write-Host "類型: $typeLabel -> $($typeMapping[$type])"
+        if ($typeMapping[$type]) {
+            Write-Host "类型: $typeLabel -> $($typeMapping[$type])"
+            if ($alternativeMapping[$type]) { Write-Host "      备选: $($alternativeMapping[$type] -join ', ')" -ForegroundColor Yellow }
+        } else {
+            Write-Host "类型: $typeLabel -> "
+        }
     }
 
-    # 在嘗試寫入註冊表前，先檢查所有文件是否都已成功複製
     if ($themeInstallSuccess) {
-        Write-DebugLog "開始註冊表設置..."
         try {
             CreateRegistryEntries -themeName $themeName -mapping $mapping -typeMapping $typeMapping
-            $script:installedThemes++
-            Write-Host "  ✓ 完成主題: $themeName ($($cursorFiles.Count) 個光標)" -ForegroundColor Green
+            $script:installedThemes++; Write-Host "  ✓ 完成主题: $themeName" -ForegroundColor Green
         } catch {
-            # 這種情況是註冊表寫入失敗
-            $script:failedThemes += $originalThemeName
-            Write-Host "  ✗ 安裝失敗 (註冊表寫入錯誤): $themeName" -ForegroundColor Red
+            $script:failedThemes += $originalThemeName; Write-Host "  ✗ 安装失败 (注册表写入错误): $themeName" -ForegroundColor Red
         }
     } else {
-        # 如果有任何文件複製失敗，則將整個主題標記為失敗
-        $script:failedThemes += $originalThemeName
-        Write-Host "  ✗ 安裝失敗: $themeName (由於文件複製錯誤)" -ForegroundColor Red
+        $script:failedThemes += $originalThemeName; Write-Host "  ✗ 安装失败: $themeName (由于文件复制错误)" -ForegroundColor Red
     }
-
-    Write-Host ""
+	Write-Host ""
 }
 
 # 計算公共前後綴
 function Get-CommonPrefixSuffix {
     param([string[]]$strings)
     
-    if ($strings.Count -eq 0) { return @("", "") }
+    # 如果文件少於2個，不可能有“公共”前後綴，直接返回空。
+    if ($strings.Count -lt 2) { 
+        return @("", "") 
+    }
     
     # 计算前缀
     $prefix = $strings[0]
@@ -302,47 +329,104 @@ function Get-CommonPrefixSuffix {
     return @($prefix, $suffix)
 }
 
+# 分析匹配策略的函數
+function AnalyzeMatchingStrategy {
+    param([string[]]$strippedNames)
+    
+    # 用於策略分析時，需要排除的僅與UpArrow相關的修飾性關鍵詞
+    $upArrowKeywords = @("alternateselec", "alternate", "代替", "uparrow", "up")
+    
+    $substantiveKeywordMatches = 0
+    $distinctNumbers = @{} # 使用哈希表來統計不重複的數字
+
+    foreach ($name in $strippedNames) {
+        $processedName = $name.ToLower() -replace '[\s・·]', ''
+
+        # 檢查實質性關鍵詞
+        $foundSubstantiveKeyword = $false
+        foreach ($keyword in $script:sortedKeywords) {
+            if ($processedName -match [regex]::Escape($keyword.ToLower())) {
+                # 如果匹配到的關鍵詞不在UpArrow的排除列表中，則視為實質性匹配
+                if ($keyword.ToLower() -notin $upArrowKeywords) {
+                    $foundSubstantiveKeyword = $true
+                    break # 找到一個實質關鍵詞就足夠了
+                }
+            }
+        }
+        if ($foundSubstantiveKeyword) {
+            $substantiveKeywordMatches++
+        }
+
+        # 提取並統計不同的數字
+        if ($processedName -match '(\d+)') {
+            $distinctNumbers[$matches[1]] = $true
+        }
+    }
+
+    # 只要有任何一個實質性關鍵詞匹配，就使用關鍵詞策略。
+    if ($substantiveKeywordMatches -gt 0) {
+        Write-DebugLog "決策：檢測到 $substantiveKeywordMatches 個實質性關鍵詞，採用 Keyword 策略。"
+        return "Keyword"
+    }
+
+    # 如果沒有實質性關鍵詞，但找到了3個或以上不同的數字，則使用數字策略。
+    if ($distinctNumbers.Count -ge 3) {
+        Write-DebugLog "決策：未檢測到實質性關鍵詞，但找到 $($distinctNumbers.Count) 個不同數字，採用 Number 策略。"
+        return "Number"
+    }
+
+    # 以上條件均不滿足，則判定為無法識別的失敗方案。
+    Write-DebugLog "決策：未找到足夠的關鍵詞或數字特徵，判定為匹配失敗。"
+    return "Failed"
+}
+
 # 定義函數：根據文件名猜測光標類型
 function DetermineCursorType {
     param(
         [string]$fileName,
-        [int]$fileNumber
+        [string]$strategy # 只接收策略，不再需要文件序號作為匹配依據
     )
-
-    # 定义数字映射表
-    $numberMap = @{
-        1 = "Arrow"; 2 = "Help"; 3 = "AppStarting"; 4 = "Wait"; 5 = "Crosshair"
-        6 = "IBeam"; 7 = "NWPen"; 8 = "No"; 9 = "SizeNS"; 10 = "SizeWE"
-        11 = "SizeNWSE"; 12 = "SizeNESW"; 13 = "SizeAll"; 14 = "UpArrow"
-        15 = "Hand"; 16 = "Pin"; 17 = "Person"
-    }
-
-    # 處理文件名：转换为小写并去除空格
-    $fileNameLower = $fileName.ToLower() -replace '[\s・·]', ''
     
-    # 关键词匹配 (使用預先計算好的 $script:sortedKeywords)
-    foreach ($keyword in $script:sortedKeywords) {
-        if ($fileNameLower.Contains($keyword)) {
-            return $script:keywordMap[$keyword]
+    # 處理文件名：转换为小写并去除空格
+    $processedFileName = $fileName.ToLower() -replace '[\s・·]', ''
+    
+    if ($strategy -eq "Keyword") {
+        # 關鍵詞策略：嚴格按排序後的關鍵詞列表匹配
+        foreach ($keyword in $script:sortedKeywords) {
+            if ($processedFileName -match [regex]::Escape($keyword.ToLower())) {
+                # 找到第一個（即最長的）匹配項，立即返回其類型
+                return @{ Type = $script:keywordMap[$keyword] }
+            }
         }
-    }
+        # 如果遍歷完所有關鍵詞都沒有匹配，則返回 null 表示匹配失敗
+        return @{ Type = $null }
 
-    # 数字序号匹配
-    if ($fileNameLower -match '\d+') {
-        $extractedNumber = [int]$matches[0]
-        if ($numberMap.ContainsKey($extractedNumber)) {
-            return $numberMap[$extractedNumber]
+    } elseif ($strategy -eq "Number") {
+        # 數字序號策略：僅當文件名中明確包含可識別的數字時才匹配
+        if ($processedFileName -match '(\d+)') {
+            $extractedNumber = [int]$matches[1]
+            
+            # 光標類型與數字的映射表
+            $numberToType = @{
+                1 = "Arrow"; 2 = "Help"; 3 = "AppStarting"; 4 = "Wait"; 5 = "Crosshair";
+                6 = "IBeam"; 7 = "NWPen"; 8 = "No"; 9 = "SizeNS"; 10 = "SizeWE";
+                11 = "SizeNWSE"; 12 = "SizeNESW"; 13 = "SizeAll"; 14 = "UpArrow";
+                15 = "Hand"; 16 = "Pin"; 17 = "Person"
+            }
+            
+            $targetType = $numberToType[$extractedNumber]
+            # 只有當提取的數字在映射表中時才返回類型
+            if ($targetType) {
+                return @{ Type = $targetType }
+            }
         }
+        
+        # 如果文件名中沒有數字，或數字不在映射表中，則返回 null 表示匹配失敗
+        return @{ Type = $null }
     }
-
-    # 按文件序号匹配
-    if ($numberMap.ContainsKey($fileNumber)) {
-        return $numberMap[$fileNumber]
-    }
-
-    # 默认值
-    Write-Host "[WARNING] 無法識別光標類型: $fileName (使用默認Arrow)" -ForegroundColor Yellow
-    return "Arrow"
+    
+    # 如果傳入了未知的策略，同樣返回失敗
+    return @{ Type = $null }
 }
 
 # 定義函數：創建註冊表項
@@ -474,6 +558,7 @@ $script:processedFiles = 0
 $script:failedThemes = @()
 $script:abnormalCountThemes = @()  # 数量异常的方案
 $script:unmatchedFilesThemes = @()  # 存在未匹配文件的方案
+$script:themesWithAlternatives = @()
 
 if ($SignalFile) {
     # 这是被提升权限后的新实例，立即创建信号文件
@@ -523,17 +608,20 @@ if (-not $isAdmin) {
             if (-not $powershellExe) {
                 throw "找不到PowerShell执行程序"
             }
+
+            # 将参数列表转换为字符串，以便在 -Command 中使用
+            $argumentsString = $argumentList -join ' '
             
             if ($powershellExe -eq "wt.exe") {
-                # 使用Windows Terminal启动pwsh
-                $baseArgs = @("pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $argumentList
+                # 使用Windows Terminal启动pwsh，并使用 -Command 保证路径正确
+                $baseArgs = @("pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '$scriptPath' $argumentsString")
             } elseif ($powershellExe -eq "powershell.exe") {
-                # 使用传统PowerShell，设置黑色背景
+                # 使用传统PowerShell，此方法本身就是最可靠的
                 $baseArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", 
-                    "& {`$Host.UI.RawUI.BackgroundColor='Black'; Clear-Host; & '$scriptPath' $($argumentList -join ' ')}")
-            } else {
-                # 使用PowerShell Core
-                $baseArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $argumentList
+                    "& {`$Host.UI.RawUI.BackgroundColor='Black'; Clear-Host; & '$scriptPath' $argumentsString}")
+            } else { # 默认为 pwsh.exe
+                # 使用PowerShell Core，同样使用 -Command
+                $baseArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '$scriptPath' $argumentsString")
             }
             
             Start-Process -FilePath $powershellExe -Verb RunAs -ArgumentList $baseArgs
@@ -564,7 +652,7 @@ try {
 function Show-Menu {
     Clear-Host
 	Write-Host "========================================" -ForegroundColor Cyan
-	Write-Host "         鼠标光标批量安装工具 v1.0" -ForegroundColor White
+	Write-Host "         鼠标光标批量安装工具 v1.1" -ForegroundColor White
 	Write-Host "========================================" -ForegroundColor Cyan
 	Write-Host ""
 	Write-Host ""
@@ -745,32 +833,44 @@ Write-Host ""
 
 if ($script:failedThemes.Count -gt 0) {
     Write-Host "✗ 安裝失敗的方案: $($script:failedThemes.Count) 個" -ForegroundColor Red
-    foreach ($failedTheme in $script:failedThemes) {
-        Write-Host "  - $failedTheme" -ForegroundColor Yellow
-    }
-}
-Write-Host ""
+    Write-Host ""
+	}
+
 Write-Host "========================================"
 Write-Host ""
+
+if ($script:themesWithAlternatives.Count -gt 0) {
+    Write-Host "💡 檢測到以下方案可能包含額外的備選光標：" -ForegroundColor Cyan
+    Write-Host "   (備選光標指多個文件匹配到同一類型，僅第一個被設為默認)" -ForegroundColor Gray
+
+    foreach ($theme in $script:themesWithAlternatives) {
+        Write-Host "`n  - $($theme.ThemeName): $($theme.AlternativeCount) 個備選文件" -ForegroundColor White
+        Write-Host "    涉及類型: $($theme.AlternativeTypes)"
+    }
+    Write-Host ""
+    Write-Host "========================================"
+    Write-Host ""
+}
 
 # 显示异常情况警告
 if ($script:abnormalCountThemes.Count -gt 0 -or $script:unmatchedFilesThemes.Count -gt 0) {
     Write-Host ""
     Write-Host "⚠️  檢測到以下異常情況：" -ForegroundColor Yellow
     Write-Host ""
-    
+	
     if ($script:abnormalCountThemes.Count -gt 0) {
-        Write-Host "📊 光標數量可能異常的方案 (常見數量: 5/10/15/17)：" -ForegroundColor Yellow
+        Write-Host "📊 光標類型數量可能異常的方案 (常見數量: 10/13/15/17)：" -ForegroundColor Yellow
         foreach ($theme in $script:abnormalCountThemes) {
-            Write-Host "   • $($theme.ThemeName) - $($theme.FileCount) 個光標文件" -ForegroundColor Yellow
+            Write-Host "   • $($theme.ThemeName) - 已匹配 $($theme.MatchedCount) 種類型" -ForegroundColor Yellow
         }
         Write-Host ""
     }
-    
+
     if ($script:unmatchedFilesThemes.Count -gt 0) {
-        Write-Host "🔍 存在未匹配光標文件的方案：" -ForegroundColor Yellow
+        Write-Host "🔍 存在無法識別其類型的光標文件：" -ForegroundColor Yellow
         foreach ($theme in $script:unmatchedFilesThemes) {
-            Write-Host "   • $($theme.ThemeName) - 總計 $($theme.TotalFiles) 個文件，匹配到 $($theme.MatchedTypes) 種類型，未匹配 $($theme.UnmatchedCount) 個" -ForegroundColor Yellow
+            Write-Host "   • $($theme.ThemeName) - 其中 $($theme.UnmatchedCount) 個文件無法識別類型。" -ForegroundColor Yellow
+            Write-Host "     (總計 $($theme.TotalFiles) 個文件，成功匹配 $($theme.MatchedTypes) 種類型)" -ForegroundColor Yellow
         }
         Write-Host ""
     }
@@ -779,7 +879,15 @@ if ($script:abnormalCountThemes.Count -gt 0 -or $script:unmatchedFilesThemes.Cou
     Write-Host ""
 }
 
-Write-Host ""
+if ($script:failedThemes.Count -gt 0) {
+    Write-Host ""
+    Write-Host "--------- 以下方案安裝失敗，請檢查日誌 ---------" -ForegroundColor Red
+    foreach ($failedTheme in $script:failedThemes) {
+        Write-Host "  - $failedTheme" -ForegroundColor Red
+    }
+    Write-Host "------------------------------------------------" -ForegroundColor Red
+	Write-Host ""
+}
 
 if ($script:installedThemes -gt 0) {
     Write-Host "安裝完成！請到控制面板 > 鼠標 > 指針中選擇新的光標方案。" -ForegroundColor Cyan
