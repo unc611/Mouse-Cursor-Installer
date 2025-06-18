@@ -89,15 +89,15 @@
       
       - 安装 PS2EXE 模块：
   
-```powershell
-    Install-Module ps2exe
-```
+    ```powershell
+      Install-Module ps2exe
+    ```
 
-- 执行以下命令进行打包：
+      - 执行以下命令进行打包：
 
-```powershell
-    ps2exe .\mouse-cursor-installer.ps1 .\mouse-cursor-installer.exe
-```
+    ```powershell
+      ps2exe .\mouse-cursor-installer.ps1 .\mouse-cursor-installer.exe
+    ```
 
 ## 🐛 故障排除
 
