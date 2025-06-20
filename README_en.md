@@ -113,7 +113,7 @@ A: The tool automatically uses the folder name as the scheme name. Please rename
 
 ### Debug Mode
 
-Enter `-debug` in the main menu to enable debug mode, which provides a detailed processing log. The log will be saved as `mouse-cursor.log` in the program's directory.
+Enter `-log` in the main menu to enable debug mode, which provides a detailed processing log. The log will be saved as `mouse-cursor.log` in the program's directory.
 
 Alternatively, you can use the startup parameter:
 
