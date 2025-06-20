@@ -129,13 +129,17 @@ A: 工具会自动以文件夹名作为方案名称，请修改文件夹名
 
 ### 调试模式
 
-在主菜单输入-debug来启用调试模式，可以获得详细的处理日志。
+在主菜单输入-log来启用调试模式，可以获得详细的处理日志。日志将保存到程序目录下的mouse-cursor.log
 
-日志将保存到程序目录下的mouse-cursor.log
+或者使用启动参数：
+
+```powershell
+    ./Mouse-Cursor-Installer.exe -log
+```
 
 ## 📄 编写
 
-- 39%的代码由Deepseek R1，30%的代码由Claude sonnet 4，30%的代码由Gemini 2.5 pro，剩下1%由本人编写。
+- 34%的代码由Deepseek R1，30%由Claude sonnet 4，35%由Gemini 2.5 pro，剩下1%由本人编写。
 - 本人只负责调试和处理一些逻辑问题。
 
 ## 🤝 贡献

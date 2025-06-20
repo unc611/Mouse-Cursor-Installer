@@ -1,18 +1,28 @@
-﻿# 鼠標光標批量安裝工具 v1.1
+﻿# 鼠標光標批量安裝工具 v1.1.1
 # 需要管理員權限運行
 # 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)
 # 許可證：MIT license
 
 param(
-    [string]$SignalFile,
-    [switch]$Debug
+    [string]$SignalFile
 )
+
+$script:debug = $args -contains '-log'
+
+# 刪除已存在的日誌文件
+function Initialize-Log {
+    if ($script:debug) {
+        $logPath = Join-Path $scriptDir 'mouse-cursor.log'
+        Remove-Item -LiteralPath $logPath -EA 0
+    }
+}
 
 function Write-DebugLog {
     param([string]$message)
     if ($script:debug) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        "[$timestamp] $message" | Out-File -FilePath "$PWD\mouse-cursor.log" -Append
+        $logPath = Join-Path $scriptDir 'mouse-cursor.log'
+        "[$timestamp] $message" | Out-File -LiteralPath $logPath -Append -Encoding utf8
     }
 }
 
@@ -135,7 +145,7 @@ function ProcessCursorSet {
     Write-DebugLog "清理后主题名称: '$themeName'"
 
     # 收集光标文件 (.ani 和 .cur)
-    $cursorFiles = Get-ChildItem -Path $sourceDir -File | Where-Object { $_.Extension -in '.ani', '.cur' } | Sort-Object Name
+    $cursorFiles = Get-ChildItem -LiteralPath $sourceDir -File | Where-Object { $_.Extension -in '.ani', '.cur' } | Sort-Object Name
     Write-Host "主题名称: $themeName (找到 $($cursorFiles.Count) 个光标文件)"
 	
     # 添加统计
@@ -254,14 +264,14 @@ function ProcessCursorSet {
     # 檢查匹配到的光标类型数量是否异常
     if ($typeMapping.Count -notin @(10, 13, 15, 17)) {
         $script:abnormalCountThemes += [PSCustomObject]@{
-            ThemeName    = $originalThemeName
+            ThemeName    = $themeName
             MatchedCount = $typeMapping.Count # 使用匹配到的類型數量
         }
     }
 
     if ($trulyUnmatchedFiles.Count -gt 0) {
         $script:unmatchedFilesThemes += [PSCustomObject]@{
-            ThemeName      = $originalThemeName
+            ThemeName      = $themeName
             TotalFiles     = $cursorFiles.Count
             MatchedTypes   = $typeMapping.Count
             UnmatchedCount = $trulyUnmatchedFiles.Count
@@ -270,7 +280,7 @@ function ProcessCursorSet {
 
     if ($alternativeMapping.Keys.Count -gt 0) {
         $script:themesWithAlternatives += [PSCustomObject]@{
-            ThemeName        = $originalThemeName
+            ThemeName        = $themeName
             AlternativeCount = ($alternativeMapping.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
             AlternativeTypes = $alternativeMapping.Keys -join ', '
         }
@@ -528,115 +538,126 @@ function CreateRegistryEntries {
 
 # ========== 主程序開始 ========== #
 
-# 請求管理員權限
-# 设置工作目录为脚本所在目录
-$currentScript = $null
-if ($MyInvocation.MyCommand.Path) {
-    $currentScript = $MyInvocation.MyCommand.Path
-} elseif ($PSCommandPath) {
-    $currentScript = $PSCommandPath
-} elseif ([System.Reflection.Assembly]::GetExecutingAssembly().Location) {
-    $currentScript = [System.Reflection.Assembly]::GetExecutingAssembly().Location
-}
+[ValidateSet('auto', 'wt', 'pwsh', 'powershell')]
+$PowerShellMode = "auto" # 修改這裡快速切換啟動方式
 
-$scriptDir = if ($currentScript -and (Test-Path $currentScript)) {
-    Split-Path $currentScript -Parent
-} else {
-    $PWD.Path
-}
-
-# 确保目录存在且可访问
-if (Test-Path $scriptDir) {
-    Set-Location $scriptDir
-} else {
-    $scriptDir = $PWD.Path
-}
-
-# 添加统计变量
+# --- 全局變數 ---
 $script:installedThemes = 0
 $script:processedFiles = 0
 $script:failedThemes = @()
-$script:abnormalCountThemes = @()  # 数量异常的方案
-$script:unmatchedFilesThemes = @()  # 存在未匹配文件的方案
+$script:abnormalCountThemes = @()
+$script:unmatchedFilesThemes = @()
 $script:themesWithAlternatives = @()
 
+# ------------------- 初始化與路徑設定 -------------------
+
+# 使用 $PSCommandPath
+if ($PSCommandPath) {
+    $currentScriptPath = $PSCommandPath
+} else {
+    $currentScriptPath = ([System.Reflection.Assembly]::GetEntryAssembly()).Location
+    $currentScriptPath = (New-Object System.Uri($currentScriptPath)).LocalPath
+}
+
+try {
+    $scriptDir = Split-Path $currentScriptPath -Parent -ErrorAction Stop
+    Set-Location -LiteralPath $scriptDir
+} catch {
+    Write-Host "警告: 無法確定或訪問腳本所在目錄。腳本將在當前目錄 '$($PWD.Path)' 繼續執行。" -ForegroundColor Yellow
+}
+
+Initialize-Log
+Write-DebugLog "powershell啟動模式：$PowerShellMode"
+Write-DebugLog "腳本路徑：$currentScriptPath"
+
+# ------------------- 管理員權限檢查與提權邏輯 -------------------
+
 if ($SignalFile) {
-    # 这是被提升权限后的新实例，立即创建信号文件
     $null = New-Item -Path $SignalFile -ItemType File -Force -EA 0
 }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    Write-Host "以管理员权限重新启动脚本..." -ForegroundColor Yellow
+    Write-Host "需要管理員權限，正在嘗試自動提權..." -ForegroundColor Yellow
     
-    $signalFile = Join-Path $env:TEMP "mouse_cursor_$(Get-Random).signal"
-    
-    # 获取当前可执行文件路径
-    $scriptPath = try {
-        if ($PSCommandPath) { $PSCommandPath }
-        elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path }
-        else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
-    } catch {
-        $MyInvocation.InvocationName
-    }
-    
-    if (-not $scriptPath -or -not (Test-Path $scriptPath -EA 0)) {
-        Write-Host "无法获取脚本路径，请手动以管理员权限运行" -ForegroundColor Red
-        Read-Host "按Enter键退出"
+    if (-not (Test-Path -LiteralPath $currentScriptPath)) {
+        Write-Host "致命錯誤: 無法獲取主腳本的有效路徑 '$currentScriptPath'。請嘗試手動以管理員身份運行。" -ForegroundColor Red
+        Read-Host "按 Enter 鍵退出。"
         exit 1
     }
-    
-    # 构建参数列表
-    $argumentList = @("-SignalFile", $signalFile)
-    if ($Debug) { $argumentList += "-Debug" }
-    
+
     try {
-        if ($scriptPath -match '\.exe$') {
-            # 对于exe文件，直接启动
-            Start-Process -FilePath $scriptPath -Verb RunAs -ArgumentList $argumentList
+        $signalFileForElevated = Join-Path $env:TEMP "mouse_cursor_$(Get-Random).signal"
+        $argumentsForElevated = @("-SignalFile", $signalFileForElevated)
+        if ($script:debug) { $argumentsForElevated += "-log" }
+
+        # --- 檢查腳本是否為 .exe ---
+        if ($currentScriptPath -match '\.exe$') {
+
+            $psi = [System.Diagnostics.ProcessStartInfo]@{
+                FileName = $currentScriptPath
+                Arguments = $argumentsForElevated -join " "
+                Verb = "runas"
+                UseShellExecute = $true
+            }
+            [System.Diagnostics.Process]::Start($psi) | Out-Null
+
         } else {
-            # 对于ps1文件，按优先级选择PowerShell版本
-            $powershellExe = $null
-            foreach ($cmd in @("wt.exe", "pwsh.exe", "powershell.exe")) {
-                if (Get-Command $cmd -EA 0) {
-                    $powershellExe = $cmd
+            # --- 如果是 .ps1 腳本，則執行 PowerShell 啟動器邏輯 ---
+            $powershellExePath = $null
+            $exeName = ''
+            
+            $priorityOrder = @("wt.exe", "pwsh.exe", "powershell.exe")
+            $searchOrder = switch ($PowerShellMode.ToLower()) {
+                'wt'         { @("wt.exe") + $priorityOrder }
+                'pwsh'       { @("pwsh.exe") + $priorityOrder }
+                'powershell' { @("powershell.exe") + $priorityOrder }
+                default      { Write-Host "自動選擇 PowerShell 啟動方式..." -ForegroundColor Cyan; $priorityOrder }
+            }
+
+            foreach ($cmd in ($searchOrder | Get-Unique)) {
+                $foundCommand = Get-Command $cmd -EA 0
+                if ($foundCommand) {
+                    $powershellExePath = $foundCommand.Source
+                    $exeName = $cmd
                     break
                 }
             }
-            
-            if (-not $powershellExe) {
-                throw "找不到PowerShell执行程序"
-            }
 
-            # 将参数列表转换为字符串，以便在 -Command 中使用
-            $argumentsString = $argumentList -join ' '
-            
-            if ($powershellExe -eq "wt.exe") {
-                # 使用Windows Terminal启动pwsh，并使用 -Command 保证路径正确
-                $baseArgs = @("pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '$scriptPath' $argumentsString")
-            } elseif ($powershellExe -eq "powershell.exe") {
-                # 使用传统PowerShell，此方法本身就是最可靠的
-                $baseArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", 
-                    "& {`$Host.UI.RawUI.BackgroundColor='Black'; Clear-Host; & '$scriptPath' $argumentsString}")
-            } else { # 默认为 pwsh.exe
-                # 使用PowerShell Core，同样使用 -Command
-                $baseArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '$scriptPath' $argumentsString")
+            if (-not $powershellExePath) { throw "在系統 PATH 中找不到任何可用的 PowerShell 執行程序。" }
+
+            if ($exeName -in @('wt.exe', 'pwsh.exe')) {
+                $startArgs = if ($exeName -eq 'wt.exe') {
+                    @("pwsh.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$currentScriptPath`"") + $argumentsForElevated
+                } else { # pwsh.exe
+                    @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$currentScriptPath`"") + $argumentsForElevated
+                }
+                Start-Process -FilePath $powershellExePath -Verb RunAs -ArgumentList $startArgs
+            } else { # powershell.exe
+                $launcherScriptPath = Join-Path $env:TEMP "Launcher_$(Get-Random).ps1"
+                $launcherContent = @"
+Param([string]`$TargetDirectory, [string]`$TargetName)
+try { Set-Location -LiteralPath `$TargetDirectory; & "`.`\`$TargetName" @args }
+finally { Remove-Item -LiteralPath `$MyInvocation.MyCommand.Path -Force -EA 0 }
+"@
+                Set-Content -LiteralPath $launcherScriptPath -Value $launcherContent -Encoding UTF8 -Force
+
+                $finalArgumentList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$launcherScriptPath`"", "`"$scriptDir`"", "`"$(Split-Path $currentScriptPath -Leaf)`"") + $argumentsForElevated
+                Start-Process -FilePath $powershellExePath -Verb RunAs -ArgumentList $finalArgumentList
             }
-            
-            Start-Process -FilePath $powershellExe -Verb RunAs -ArgumentList $baseArgs
         }
         
-        exit  # 成功启动新实例后退出当前实例
-        
+        exit # 成功啟動新實例後，退出當前非管理員實例
     } catch {
-        Write-Host "提权启动失败: $_" -ForegroundColor Red
-        Read-Host "按Enter键退出"
+        Write-Host "提權啟動失敗: $_" -ForegroundColor Red
+        Read-Host "按 Enter 鍵退出。"
         exit 1
     }
 }
 
-# 清理信号文件
+# =================== 提權後的主腳本邏輯 ===================
+
 if ($SignalFile) { Remove-Item $SignalFile -Force -EA 0 }
 
 try {
@@ -645,14 +666,13 @@ try {
     Write-Host "执行策略已由系统管理，继续执行..." -ForegroundColor Yellow
 }
 
-
 # 設置控制台編碼為 UTF-8
 [Console]::OutputEncoding = [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 
 function Show-Menu {
     Clear-Host
 	Write-Host "========================================" -ForegroundColor Cyan
-	Write-Host "         鼠标光标批量安装工具 v1.1" -ForegroundColor White
+	Write-Host "        鼠标光标批量安装工具 v1.1.1" -ForegroundColor White
 	Write-Host "========================================" -ForegroundColor Cyan
 	Write-Host ""
 	Write-Host ""
@@ -663,6 +683,10 @@ function Show-Menu {
     Write-Host "3. 显示帮助信息"
     Write-Host "0. 退出程序"
 	Write-Host ""
+    if ($Debug) {
+		Write-Host "调试模式已开启，选择3查看帮助信息。" -ForegroundColor Cyan
+		Write-Host ""
+	}
     Write-Host "========================================" -ForegroundColor Yellow
    	Write-Host ""
 
@@ -684,7 +708,7 @@ function Show-Help {
 	Write-Host "3. 该工具会自动以文件夹名作为方案名称"
     Write-Host "4. 该工具会根据文件名自动匹配光标类型"
     Write-Host "5. 需要管理员权限运行"
-	Write-Host "6. 输入-debug可以启用详细日志"
+	Write-Host "6. 输入-log可以启用调试模式，详细日志将位于脚本目录下"
 	Write-Host ""
     Write-Host "===================================================" -ForegroundColor Yellow
     Write-Host ""
@@ -695,10 +719,11 @@ function Show-Help {
 function Get-UserDirectory {
     $userInput = Read-Host "请输入目录路径"
     # 移除可能存在的引号
-    $userInput = $userInput.Trim('"', "'")
-    
+    if ($userInput.StartsWith("'") -and $userInput.EndsWith("'")) {
+    $userInput = $userInput.Substring(1, $userInput.Length - 2)
+    }
     # 检查路径是否存在
-    if (-not (Test-Path -Path $userInput -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $userInput -PathType Container)) {
         Write-Host "目录不存在: $userInput" -ForegroundColor Red
         return $null
     }
@@ -736,13 +761,13 @@ do {
         "3" {
             Show-Help
         }
-		"-debug" {
+		"-log" {
             $script:debug = -not $script:debug
             if ($script:debug) {
-                Write-Host "`nDebug模式已启用" -ForegroundColor Green
+                Write-Host "`n调试模式已启用" -ForegroundColor Green
                 Write-Host "日志将保存到: $PWD\mouse-cursor.log" -ForegroundColor Cyan
             } else {
-                Write-Host "`nDebug模式已禁用" -ForegroundColor Yellow
+                Write-Host "`n调试模式已禁用" -ForegroundColor Yellow
             }
             Write-Host ""
             Read-Host "按Enter键继续"
@@ -778,23 +803,26 @@ Write-Host ""
 # 记录开始时间
 $startTime = Get-Date
 
-# 獲取需要處理的文件夾
+# 获取需要处理的文件夹
 function Get-CursorFolders {
     param([string]$BasePath, [bool]$IsRecursive)
     
-    # 根據遞歸選項
+    # 根据递归选项
     $folders = if ($IsRecursive) {
         Write-Host "递归扫描所有子文件夹..." -ForegroundColor Cyan
-        Get-ChildItem -Path $BasePath -Directory -Recurse
+        Get-ChildItem -LiteralPath $BasePath -Directory -Recurse
     } else {
         Write-Host "扫描当前目录下的文件夹..." -ForegroundColor Cyan
-        Get-ChildItem -Path $BasePath -Directory
+        Get-ChildItem -LiteralPath $BasePath -Directory
     }
     
     # 过滤出包含光标文件的文件夹
     return $folders | Where-Object {
-        # 使用 Test-Path 進行快速檢查
-         (Test-Path -Path "$($_.FullName)\*.cur" -PathType Leaf) -or (Test-Path -Path "$($_.FullName)\*.ani" -PathType Leaf)
+        # 使用 -LiteralPath 参数避免通配符解释问题
+        $curFiles = Get-ChildItem -LiteralPath $_.FullName -Filter "*.cur" -File -EA 0
+        $aniFiles = Get-ChildItem -LiteralPath $_.FullName -Filter "*.ani" -File -EA 0
+        
+        return ($curFiles.Count -gt 0) -or ($aniFiles.Count -gt 0)
     }
 }
 
@@ -807,7 +835,7 @@ foreach ($folder in $cursorFolders) {
 
 # 處理當前目錄中的光標文件 (這一步很重要，確保根目錄的文件也能被處理)
 # 使用 Where-Object 確保過濾正確
-$rootCursorFiles = Get-ChildItem -Path $script:cursorDir -File | 
+$rootCursorFiles = Get-ChildItem -LiteralPath $script:cursorDir -File | 
                  Where-Object { $_.Extension -in ('.ani', '.cur') }
 
 if ($rootCursorFiles) {
@@ -900,7 +928,7 @@ if ($script:installedThemes -gt 0) {
         # 使用control.exe
         if (-not $opened) {
             try {
-                Start-Process "control.exe" -ArgumentList "main.cpl,,1" -ErrorAction Stop
+                Start-Process "control.exe" -ArgumentList "main.cpl,,1" -WorkingDirectory $env:SystemRoot -ErrorAction Stop
                 $opened = $true
             } catch { }
         }
@@ -908,7 +936,7 @@ if ($script:installedThemes -gt 0) {
         # 備用方法: 使用rundll32.exe
         if (-not $opened) {
             try {
-                Start-Process "rundll32.exe" -ArgumentList "shell32.dll,Control_RunDLL main.cpl,,1" -ErrorAction Stop
+                Start-Process "rundll32.exe" -ArgumentList "shell32.dll,Control_RunDLL main.cpl,,1" -WorkingDirectory $env:SystemRoot -ErrorAction Stop
                 $opened = $true
             } catch { }
         }
