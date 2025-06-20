@@ -1,7 +1,7 @@
 # 更新日志 (Changelog)
 
-> Mouse-Cursor-Installer
-> 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)
+> Mouse-Cursor-Installer  
+> 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)  
 > 許可證：MIT license
 
 ### v1.1.1 (2025-06-20)
