@@ -4,6 +4,17 @@
 > 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)  
 > 許可證：MIT license
 
+### v1.1.2 (2025-06-22)
+
+改进 (Improvements)
+
+  - 略微优化输出信息可读性。
+
+Bug修复 (Bug fixs)
+
+  - 修复了"SizeNWSE"类型的部分关键词不含有1时无法匹配的问题
+  - 修复了powershell 5.1启动可能产生垃圾文件的问题（此项和exe无关）
+
 ### v1.1.1 (2025-06-20)
 
 改进 (Improvements)

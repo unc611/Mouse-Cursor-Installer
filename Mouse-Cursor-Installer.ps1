@@ -1,10 +1,11 @@
-﻿# 鼠標光標批量安裝工具 v1.1.1
+﻿# 鼠標光標批量安裝工具 v1.1.2
 # 需要管理員權限運行
 # 作者：uncherry (https://github.com/unc611/Mouse-Cursor-Installer)
 # 許可證：MIT license
 
 param(
-    [string]$SignalFile
+    [string]$SignalFile,
+	[string]$launcherScriptPath
 )
 
 $script:debug = $args -contains '-log'
@@ -91,7 +92,7 @@ $script:cursorTypeChinese = @{
             "ew-resize", "w-resize", "horizontal", "左右", "ew", "we"
         )
         "SizeNWSE" = @(
-            "diagonalresize1", "斜めに拡大縮小1", "斜めに拡大縮小", "沿对角线调整大小1",
+            "diagonalresize1", "diagonalresize", "斜めに拡大縮小1", "斜めに拡大縮小", "沿对角线调整大小1", "沿对角线调整大小"
             "nwse-resize", "nw-resize", "diagonal1", "resize1", "斜め1", "nwse"
         )
         "SizeNESW" = @(
@@ -293,7 +294,7 @@ function ProcessCursorSet {
             Write-Host "类型: $typeLabel -> $($typeMapping[$type])"
             if ($alternativeMapping[$type]) { Write-Host "      备选: $($alternativeMapping[$type] -join ', ')" -ForegroundColor Yellow }
         } else {
-            Write-Host "类型: $typeLabel -> "
+            Write-Host "类型: $typeLabel -> " -ForegroundColor Magenta
         }
     }
 
@@ -613,7 +614,7 @@ if (-not $isAdmin) {
                 'wt'         { @("wt.exe") + $priorityOrder }
                 'pwsh'       { @("pwsh.exe") + $priorityOrder }
                 'powershell' { @("powershell.exe") + $priorityOrder }
-                default      { Write-Host "自動選擇 PowerShell 啟動方式..." -ForegroundColor Cyan; $priorityOrder }
+                default      { $priorityOrder }
             }
 
             foreach ($cmd in ($searchOrder | Get-Unique)) {
@@ -638,7 +639,10 @@ if (-not $isAdmin) {
                 $launcherScriptPath = Join-Path $env:TEMP "Launcher_$(Get-Random).ps1"
                 $launcherContent = @"
 Param([string]`$TargetDirectory, [string]`$TargetName)
-try { Set-Location -LiteralPath `$TargetDirectory; & "`.`\`$TargetName" @args }
+try { 
+    Set-Location -LiteralPath `$TargetDirectory
+	& "`.`\`$TargetName" '$launcherScriptPath' @args 
+	}
 finally { Remove-Item -LiteralPath `$MyInvocation.MyCommand.Path -Force -EA 0 }
 "@
                 Set-Content -LiteralPath $launcherScriptPath -Value $launcherContent -Encoding UTF8 -Force
@@ -650,6 +654,7 @@ finally { Remove-Item -LiteralPath `$MyInvocation.MyCommand.Path -Force -EA 0 }
         
         exit # 成功啟動新實例後，退出當前非管理員實例
     } catch {
+		if ($launcherScriptPath) { Remove-Item $launcherScriptPath -Force -EA 0 }
         Write-Host "提權啟動失敗: $_" -ForegroundColor Red
         Read-Host "按 Enter 鍵退出。"
         exit 1
@@ -659,6 +664,7 @@ finally { Remove-Item -LiteralPath `$MyInvocation.MyCommand.Path -Force -EA 0 }
 # =================== 提權後的主腳本邏輯 ===================
 
 if ($SignalFile) { Remove-Item $SignalFile -Force -EA 0 }
+if ($launcherScriptPath) { Remove-Item $launcherScriptPath -Force -EA 0 }
 
 try {
     Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
@@ -672,7 +678,7 @@ try {
 function Show-Menu {
     Clear-Host
 	Write-Host "========================================" -ForegroundColor Cyan
-	Write-Host "        鼠标光标批量安装工具 v1.1.1" -ForegroundColor White
+	Write-Host "        鼠标光标批量安装工具 v1.1.2" -ForegroundColor White
 	Write-Host "========================================" -ForegroundColor Cyan
 	Write-Host ""
 	Write-Host ""
@@ -797,7 +803,7 @@ $script:systemCursorDir = Join-Path $env:SystemRoot "Cursors"
 Write-DebugLog "當前工作目錄: $script:cursorDir"
 Write-DebugLog "系統光標目錄: $script:systemCursorDir"
 
-Write-Host "正在掃描光標文件..."
+Write-Host "`n正在掃描光標文件..."
 Write-Host ""
 
 # 记录开始时间
@@ -818,7 +824,7 @@ function Get-CursorFolders {
     
     # 过滤出包含光标文件的文件夹
     return $folders | Where-Object {
-        # 使用 -LiteralPath 参数避免通配符解释问题
+
         $curFiles = Get-ChildItem -LiteralPath $_.FullName -Filter "*.cur" -File -EA 0
         $aniFiles = Get-ChildItem -LiteralPath $_.FullName -Filter "*.ani" -File -EA 0
         

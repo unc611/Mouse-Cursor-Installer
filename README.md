@@ -142,6 +142,8 @@ A: 工具会自动以文件夹名作为方案名称，请修改文件夹名
 - 34%的代码由Deepseek R1，30%由Claude sonnet 4，35%由Gemini 2.5 pro，剩下1%由本人编写。
 - 本人只负责调试和处理一些逻辑问题。
 
+> [查看更新日志](./changelog.md)
+
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
